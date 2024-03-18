@@ -10,6 +10,7 @@
 #include "AtlMin.h"
 #include "AtlasTRT.h"
 #include "VLLf.h"
+#include "VLLd.h"
 #include "DELPHES2.h"
 #include "dbxParticle.h"
 #include "newpoet.h"
@@ -59,6 +60,7 @@ int main(int argc, char*argv[])
  bool use_cmsodR2=false;
  bool use_cmsnano=false;
  bool use_vllf=false;
+ bool use_vlld=false;
  bool use_DELPHES2=false;
 
  string inptype;
@@ -126,6 +128,7 @@ for (int i = 2; i < argc; i++) {
  else if (inptype == "CMSODR2") { use_cmsodR2 =true;}
  else if (inptype == "CMSNANO") { use_cmsnano =true;}
  else if (inptype == "VLLF")	{ use_vllf =true;}
+ else if (inptype == "VLLD")	{ use_vlld =true;}
  else{
    std::cout<<"unknown input mode. exiting..."<<endl;
    exit(-3);
@@ -190,6 +193,9 @@ for (int i = 2; i < argc; i++) {
    cout << "~Now using Delphes files.~~~~~~ beta!\n";
    leafname = "Delphes";
   }else if (use_vllf){
+   cout << "~Now using ATLAS VLL Group f files.~~~~~~ alpha!\n";
+   leafname = "nominal";
+  }else if (use_vlld){
    cout << "~Now using ATLAS VLL Group f files.~~~~~~ alpha!\n";
    leafname = "nominal";
   }else{
@@ -276,7 +282,10 @@ for (int i = 2; i < argc; i++) {
    } else if (use_vllf){
     VLLf *VLLfa=new VLLf((char*)xxx.c_str(),chain);
           VLLfa->Loop(aselect, username);
-  }
+   } else if (use_vlld){
+    VLLd *VLLda=new VLLd((char*)xxx.c_str(),chain);
+          VLLda->Loop(aselect, username);
+   } 
 
   cout << "finished."<<endl;
   _afile->Close();
