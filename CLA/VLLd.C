@@ -14,6 +14,8 @@
 #include "analysis_core.h"
 #include "AnalysisController.h"
 #include <iostream>
+#include <sstream>      // std::istringstream
+#include <string>
 #include "TTreeReader.h"
 using namespace std;
 
@@ -30,43 +32,9 @@ extern map<string, TTreeReader*> ttr_map;
 #endif
 
 
-
-void VLLd::Loop(  analy_struct aselect, char *extname )
+void VLLd::GetPhysicsObjects( Long64_t j, AnalysisObjects *a0 )
 {
-// Signal HANDLER
-   signal (SIGINT, _fsig_handler); // signal handler has issues with CINT
-
-   if (fChain == 0) {
-          cout <<"Error opening the data file"<<endl; return;
-   }
-
-   int verboseFreq(aselect.verbfreq);
-   evt_data anevt;
-   float blow_th=1.7400;
-
-   map < string, string > syst_names;
-   AnalysisController aCtrl(&aselect, syst_names);
-   aCtrl.Initialize(extname);
-   cout << "End of analysis initialization"<<endl;
-
-   Long64_t nentries = fChain->GetEntriesFast();
-   if (aselect.maxEvents>0 ) nentries=aselect.maxEvents;
-   cout << "number of entries " << nentries << endl;
-   Long64_t startevent = 0;
-   if (aselect.startpt>0 ) startevent=aselect.startpt;
-   cout << "starting entry " << startevent << endl;
-   Long64_t lastevent = startevent + nentries;
-   if (lastevent > fChain->GetEntriesFast() ) { lastevent=fChain->GetEntriesFast();
-       cout << "Interval exceeds tree. Analysis is done on max available events starting from event : " << startevent << endl;
-   }
-
-   for (Long64_t j=startevent; j<lastevent; ++j) {
-
-       if ( fctrlc ) { cout << "Processed " << j << " events\n"; break; }
-       if ( j%verboseFreq == 0 ) cout << "Processing event " << j << endl;
        fChain->GetEntry(j);
-
-DEBUG("Read Event\n");
 
        vector<dbxMuon>     muons;
        vector<dbxElectron> electrons;
@@ -90,6 +58,8 @@ DEBUG("Read Event\n");
        map<string, vector<dbxParticle> >combo_map;
        map<string, vector<dbxParticle> >constits_map;
        map<string, TVector2            >  met_map;
+
+       evt_data anevt;
 
 //temporary variables
        TLorentzVector  alv, alv0, alv1, alv2, alv3, alv4, alv5;
@@ -254,7 +224,7 @@ DEBUG("Jets ok\n");
         anevt.vxpType=0;
         anevt.lar_Error=0;
         anevt.core_Flags=0;
-        anevt.maxEvents=nentries;
+        //anevt.maxEvents=nentries;
 
 
 
@@ -272,12 +242,212 @@ DEBUG("Filling finished"<<std::endl);
     if (constits_map.size() < 1) // we only add this if it was previously empty...
     constits_map.insert( pair <string,vector<dbxParticle> > ("Constits",  constis) );
 
-    ttr_map["nominal"]->SetEntry(j);
-    AnalysisObjects a0={muos_map, eles_map, taus_map, gams_map, jets_map, ljets_map, truth_map,track_map, combo_map, constits_map, met_map, anevt};
-    aCtrl.RunTasks(a0);
+        *a0={muos_map, eles_map, taus_map, gams_map, jets_map, ljets_map, truth_map,track_map, combo_map, constits_map, met_map, anevt};
+}
+ //--------------------------------------------------------LOOP
+void VLLd::Loop( analy_struct aselect, char *extname)
+{
+// Signal HANDLER
+  signal (SIGINT, _fsig_handler); // signal handler has issues with CINT
+   TFile *afile= ((TChain *)fChain)->GetFile();
+
+   if (fChain == 0) {
+          cout <<"Error opening the data file"<<endl; return;
+   }
+   int verboseFreq(aselect.verbfreq);
+   bool  doSystematics(aselect.dosystematics);
+   map < string, syst_struct > systematics; // contains all
+   map < string, string > syst_names; // contains all
+   map < string, VLLd*> syst_objects;
+
+   if (doSystematics) {
+       string tempLine;
+       cout << "Reading available systematics from ini file...\n";
+       TString CardName="BP_1-card.ini";
+       ifstream cardfile(CardName);
+       if ( ! cardfile.good()) {
+         cerr << "The cardfile " << CardName << " file has problems... " << endl;
+       }
+       int systindex=0;
+       while ( ! cardfile.eof() ) {
+          getline( cardfile, tempLine );
+          if ( tempLine[0] == '#' ) continue; // skip comment lines starting with #
+          if (tempLine.find_first_of("#") != std::string::npos ){ // skip anything after #
+            tempLine.erase(tempLine.find_first_of("#"));
+          }
+          if (tempLine.size() < 3) continue; // skip the junk
+
+          std::istringstream iss(tempLine);
+          std::vector<std::string> resultstr((std::istream_iterator<std::string>(iss)), std::istream_iterator<std::string>());
+          if (resultstr.size() < 1) continue;
+          string firstword=resultstr[0];
+          for(auto& c : firstword) { c = tolower(c); } // convert to lowercase
+
+//---------do we have a systematic or NOT ?
+         if (firstword == "systematic" ) {
+              string ison=resultstr[1];
+              for(auto& c : ison) { c = tolower(c); } // convert to lowercase
+              if (ison == "on") {
+                resultstr[2].erase(remove( resultstr[2].begin(), resultstr[2].end(), '\"' ),resultstr[2].end());
+                resultstr[3].erase(remove( resultstr[3].begin(), resultstr[3].end(), '\"' ),resultstr[3].end());
+                DEBUG("--> Syst  "<< resultstr[2] << " &&  " << resultstr[3]<<" "<<resultstr[4] <<"\n");
+                if ( resultstr[4] != "ttree" ) { // maybe sshould contain weight
+		 for (int ri=2; ri<4; ri++){
+                  size_t findex = resultstr[ri].find_first_of("[");
+                  syst_struct asyst;
+                  if (findex == std::string::npos ){ // without any []
+                      asyst.index=systindex;
+                      asyst.vartype=resultstr[4];
+                      asyst.varname=resultstr[ri];
+                      asyst.varid=0;
+                      asyst.systname=resultstr[ri];// I am double counting
+                      systematics[ resultstr[ri] ] = asyst;  // add a simple variable
+                      syst_names[ resultstr[ri] ] = resultstr[4];  // add a simple variable
+                  } else { // here we have [] lets find the numbers
+                      size_t lindex = resultstr[ri].find_first_of("]");
+                      string numsection=resultstr[ri].substr(findex+1, lindex-findex-1);
+                      string delimiters=",";
+                      resultstr[ri].erase(findex);
+                      stringstream jss(numsection);
+                      string intermediate;
+                      while(getline(jss, intermediate, ',')) {
+                            cout <<" select subset @" << intermediate << " of "<< resultstr[ri] <<"\n";
+                            string asysname=resultstr[ri]+"["+intermediate+"]";
+                            //cout <<"==========>"<< asysname <<"\n";
+                            asyst.vartype=resultstr[4];
+                            asyst.varname=resultstr[ri];
+                            asyst.systname=asysname;
+                            asyst.varid=stoi(intermediate);
+                            asyst.index=systindex;
+                            systematics[asysname] = asyst ; // with []
+                            syst_names[asysname] = resultstr[4] ; // with []
+                      }
+                  }
+                  systindex++;
+                  freaders.push_back(TTreeReaderArray<Float_t>( *(ttr_map["nominal"]), resultstr[ri].c_str() ) ); //push only the generic name
+             //     cout <<"XXXXXXXXXXXXXXXXX:"<<ri<<" "<< resultstr[ri]<< " @:"<< ttr_map["nominal"] <<" finished\n";
+                 }//2 3 counting
+               } else { // tree
+                    string xxx="XXX";
+                    syst_names[resultstr[2]] = resultstr[4] ; // with []
+                    syst_names[resultstr[3]] = resultstr[4] ; // with []
+                    
+             //       cout << "B r2:"<< resultstr[2]<<" r3:"<<resultstr[3]<<" r4:"<<resultstr[4]<<"\n";                   
+
+                    syst_struct asyst;
+                    asyst.vartype=resultstr[4];
+                    asyst.varname=resultstr[2];
+                    asyst.systname=resultstr[2];
+                    asyst.varid=-1;
+                    asyst.index=systindex;
+                    syst_names[resultstr[2]] = resultstr[4] ; // with []
+                    systematics[resultstr[2]] = asyst ; // with []
+                    syst_objects[resultstr[2]] = new VLLd((char*)xxx.c_str() ,(TChain *)afile->Get(resultstr[2].c_str()) );
+                    systindex++;
+                    syst_struct bsyst;
+                    bsyst.vartype=resultstr[4];
+                    bsyst.varname=resultstr[3];
+                    bsyst.systname=resultstr[3];
+                    bsyst.varid=-1;
+                    bsyst.index=systindex;
+                    syst_names[resultstr[3]] = resultstr[4] ; // with []
+                    syst_objects[resultstr[3]]=new VLLd((char*)xxx.c_str(),(TChain *)afile->Get(resultstr[3].c_str()) );
+                    systematics[resultstr[3]] = bsyst ; // with []
+                    systindex++;
+                    cout << "A r2:"<< resultstr[2]<<" r3:"<<resultstr[3]<<" r4:"<<resultstr[4]<<"\n";                   
+
+                    // TFile * _afile = TFile::Open(fileList[0].c_str());
+                    // ttreader =  new TTreeReader(leafname.c_str(), _afile);
+               }
+              }// end of systematics on
+             continue;
+          }
+          
+       }// end of while reading the file
+   }// end of do systematics
+
+   //--------------start stop event ids etc
+   map < string,   AnalysisObjects > analysis_objs_map;
+
+   AnalysisController aCtrl(&aselect, syst_names);
+   aCtrl.Initialize(extname);
+   cout << "End of analysis initialization"<<endl;
+
+   Long64_t nentries = fChain->GetEntriesFast();
+   if (aselect.maxEvents>0 ) nentries=aselect.maxEvents;
+   cout << "number of entries " << nentries << endl;
+   Long64_t startevent = 0;
+   if (aselect.startpt>0 ) startevent=aselect.startpt;
+   cout << "starting entry " << startevent << endl;
+   Long64_t lastevent = startevent + nentries;
+   if (lastevent > fChain->GetEntriesFast() ) { lastevent=fChain->GetEntriesFast();
+       cout << "Interval exceeds tree. Analysis is done on max available events starting from event : " << startevent << endl;
+   }
+
+// ******************************************************************
+   for (Long64_t j=startevent; j<lastevent; ++j) { // event loop here
+
+     //  if ( fctrlc ) { cout << "Processed " << j << " events\n"; break; }
+       if (0 > LoadTree (j)) break;
+       if ( j%verboseFreq == 0 ) cout << "Processing event " << j << endl;
+
+       AnalysisObjects a0;
+       GetPhysicsObjects(j, &a0);
+       ttr_map["nominal"]->SetEntry(j);
+       evt_data oldevt=a0.evt;
+       double wvalue=0;
+       
 
 
-}// end of event loop
+       for (map<string,syst_struct>::iterator it = systematics.begin(); it != systematics.end(); it++) {
+
+ //        cout << "it nam:"<<it->first<<"\t"<<it->second.vartype<<"\t" ;
+         int jsyst=it->second.index;
+         int jid=it->second.varid;
+ //        cout <<" jsyst:"<<jsyst <<" jid:"<< jid<<"\n";
+         if (jid >=0){
+           wvalue = freaders.at(jsyst)[jid]; //may not be zero?
+ //          cout <<"Wv:"<<wvalue<<"\n";
+           if (jsyst>0) a0.evt=oldevt;
+         }
+
+         if (it->second.vartype ==  "weight_jvt" ) {
+                a0.evt.weight_jvt=wvalue; // cout <<  "jvt\n";
+         	analysis_objs_map[it->first] = a0;
+         } else if (it->second.vartype == "weight_pileup" ) {
+                a0.evt.weight_pileup=wvalue; // cout <<  "pileup\n";
+         	analysis_objs_map[it->first] = a0;
+         } else if (it->second.vartype == "weight_leptonSF" ) {
+                a0.evt.weight_leptonSF=wvalue; //  cout <<  "SF\n";
+         	analysis_objs_map[it->first] = a0;
+         } else if (it->second.vartype == "weight_BTagSF" ) {
+                a0.evt.weight_bTagSF_77=wvalue; //  cout <<  "w BTAG:" << wvalue <<"\n";
+         	analysis_objs_map[it->first] = a0;
+         } else if (it->second.vartype == "ttree" ) {
+		AnalysisObjects ad;
+   //             cout<<"NAme D:"<<it->first<<"\n";
+             	syst_objects[it->first]->GetPhysicsObjects(j, &ad);
+        	analysis_objs_map[it->first] = ad;
+  	      it++;
+		AnalysisObjects au;
+     //           cout<<"NAme U:"<<it->first<<"\n";
+                syst_objects[it->first]->GetPhysicsObjects(j, &au);
+        	analysis_objs_map[it->first] = au;
+
+             for ( map<string, TTreeReader*>::iterator itr=ttr_map.begin(); itr!= ttr_map.end(); itr++){
+                     (itr->second)->SetEntry(j);
+             }
+
+
+         } else {
+	        cout << "problem with: "<<it->second.vartype<< ", no such systematics type.\n";
+         }
+       } // end of loop over syst subsyst name
+
+       a0.evt=oldevt;
+       aCtrl.RunTasks(a0, analysis_objs_map);
+
+   }// end of event loop
    aCtrl.Finalize();
 
 }

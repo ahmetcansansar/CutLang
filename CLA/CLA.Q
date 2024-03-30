@@ -285,6 +285,7 @@ for (int i = 2; i < argc; i++) {
    } else if (use_vlld){
     VLLd *VLLda=new VLLd((char*)xxx.c_str(),chain);
           VLLda->Loop(aselect, username);
+          delete VLLda;
    } 
 
   cout << "finished."<<endl;

@@ -6,16 +6,32 @@
 #include <TFile.h>
 
 #include "dbxParticle.h"
-#include "vector"
+#include "ROOT/RVec.hxx"
+#include "ROOT/RVec.hxx"
+
+// Header file for the classes stored in the TTree if any.
+#include "TClonesArray.h"
+#include "TObject.h"
+#include "dbxParticle.h"
+#include "Node.h"
+
+#include <cstdlib>
 #include <iostream>
-#include "ROOT/RVec.hxx"
-#include "ROOT/RVec.hxx"
+#include <cmath>
+#include <iomanip>
+#include <fstream>
+#include "vector"
+#include "TTreeReader.h"
+#include "TTreeReaderArray.h"
 using namespace std;
 
 class VLLd {
 public :
    TTree          *fChain;   //!pointer to the analyzed TTree or TChain
    Int_t           fCurrent; //!current Tree number in a TChain
+
+   //ttree reader
+   vector< TTreeReaderArray<Float_t> > freaders;
 
 // Fixed size dimensions of array or collections stored in the TTree if any.
 
@@ -2366,6 +2382,7 @@ public :
    VLLd(char *file_name, TChain *tree=0);
    virtual ~VLLd();
    virtual Int_t    GetEntry(Long64_t entry);
+   virtual void     GetPhysicsObjects(Long64_t entry, AnalysisObjects *a0);
    virtual Long64_t LoadTree(Long64_t entry);
    virtual void     Init(TTree *tree);
    virtual void     Loop(analy_struct aselect, char *sampletype);
