@@ -332,10 +332,10 @@ elif [ ${PRLL} -ne 1 ]; then
     cd $WORK_PATH/temp_runs_${SHELL_ID}_${lp}
     if [ $lp -eq $((PRLL-1)) ]; then # calls CLA.sh from temp folders
       echo CLA $_dataf $datatype -i ../temp_adl_$SHELL_ID/tempor.adl -s $((STRT+lp*intrvl)) -e $((intrvl+EVENTS%PRLL)) -v $VERBOSE $DEPP 
-      ./CLA.sh $_dataf $datatype -i ../temp_adl_$SHELL_ID/tempor.adl -s $((STRT+lp*intrvl)) -e $((intrvl+EVENTS%PRLL)) -v $VERBOSE $DEPP 2>/dev/null > ../temp_adl_$SHELL_ID/out_${lp}.txt
+      ./CLA.sh $_dataf $datatype -i ../temp_adl_$SHELL_ID/tempor.adl -s $((STRT+lp*intrvl)) -e $((intrvl+EVENTS%PRLL)) -v $VERBOSE $DEPP -S 2>/dev/null > ../temp_adl_$SHELL_ID/out_${lp}.txt
     else
       echo CLA $_dataf $datatype -i ../temp_adl_$SHELL_ID/tempor.adl -s $((STRT+lp*intrvl)) -e $((intrvl+EVENTS%PRLL)) -v $VERBOSE $DEPP 
-      ./CLA.sh $_dataf $datatype -i ../temp_adl_$SHELL_ID/tempor.adl -s $((STRT+lp*intrvl)) -e $((intrvl)) -v $VERBOSE  $DEPP 2>/dev/null > ../temp_adl_$SHELL_ID/out_${lp}.txt
+      ./CLA.sh $_dataf $datatype -i ../temp_adl_$SHELL_ID/tempor.adl -s $((STRT+lp*intrvl)) -e $((intrvl)) -v $VERBOSE  $DEPP -S 2>/dev/null > ../temp_adl_$SHELL_ID/out_${lp}.txt
     fi
   }
 #####################################
